@@ -309,9 +309,9 @@ selectInput("binom.data", label = "Select the data you want to analyze:",
 
 ```
 
-If you selected `Custom data`, enter the value of $\hat{p}$ from your data.
+Enter the value of $\hat{p}$ from your data
 
-If you selected `Generate sample`, enter the "true" value of $p$.
+Enter the "true" value of $p$
 
 ```{r custom.phat}
 
@@ -322,7 +322,7 @@ numericInput("phat", label = withMathJax('\\( \\hat{p} \\text{ or } p \\):'),
 ```
 
 
-If you selected `Custom data` or `Generate sample`, enter the value of the sample size $n$.
+Enter the value of the sample size $n$.
 
 
 
@@ -512,7 +512,79 @@ renderPlot({
 ```
 
 
+<script>
 
+function detect_change() {
+    const paragraphs = document.getElementsByTagName('p');
+    
+    let index;
+    for (var i=0; i<paragraphs.length; i++){
+        if (paragraphs[i].innerHTML.includes('Enter the value of <span')){
+            index = i;
+            break;
+        }
+    }
+    
+    const n = document.querySelector("#n");
+    
+    const p_box = document.querySelector("#phat");
+    p_label = document.querySelector("[for='phat']")
+    switch (this.value) {
+        case 'admissions':
+            n.value = 46;
+            n.setAttribute("disabled", "disabled");
+            p_box.style.display = 'None';
+            p_label.style.display = 'None';
+            paragraphs[index].style.display = 'None';
+            paragraphs[index+1].style.display = 'None';
+            paragraphs[index+2].style.display = 'None';
+            break;
+        case 'challenger':
+            n.value = 23;
+            n.setAttribute("disabled", "disabled");
+            p_box.style.display = 'None';
+            p_label.style.display = 'None';
+            paragraphs[index].style.display = 'None';
+            paragraphs[index+1].style.display = 'None';
+            paragraphs[index+2].style.display = 'None';
+            break;
+        case 'custom':
+            n.removeAttribute("disabled");
+            paragraphs[index].style.display = 'block';
+            paragraphs[index+1].style.display = 'None';
+            paragraphs[index+2].style.display = 'block';
+            document.querySelector("#MathJax-Span-66").style.display = 'inline';
+            document.querySelector("#MathJax-Span-67").style.display = 'None';
+            document.querySelector("#MathJax-Span-68").style.display = 'None';
+            p_box.style.display = 'block';
+            p_label.style.display = 'block';
+            p_box.value = 0.5;
+            n.value = 10;
+            break;
+        case 'generate':
+            n.removeAttribute("disabled");
+            paragraphs[index].style.display = 'None';
+            paragraphs[index+1].style.display = 'block';
+            paragraphs[index+2].style.display = 'block';
+            document.querySelector("#MathJax-Span-66").style.display = 'None';
+            document.querySelector("#MathJax-Span-67").style.display = 'None';
+            document.querySelector("#MathJax-Span-68").style.display = 'block';
+            p_box.style.display = 'block';
+            p_label.style.display = 'block';
+            p_box.value = 0.5;
+            n.value = 10;
+    }
+ }
+ 
+
+$(document).ready(function() {
+  //Add an event listener
+  $(document).on("change", "select", detect_change)
+  
+  // trigger the event
+  document.querySelector('select').dispatchEvent(new Event('change', { 'bubbles': true }))
+});
+</script>
 
 
 **Posterior analysis**
