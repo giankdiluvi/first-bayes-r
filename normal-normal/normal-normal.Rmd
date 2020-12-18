@@ -53,112 +53,12 @@ set.seed(2020)
 
 
 ```{r}
-# taken from package pscl (not installed in shiny-servetr.stat.ubc)
-# code: https://github.com/cran/pscl/blob/master/R/betaHPD.r
-# author: Simon Jackman
-# todo: install package pscl in stat server and use that instead
-betaHPD <- function(alpha,beta,p=.95,plot=FALSE,xlim=NULL,debug=FALSE){
+normalHPD <- function(mu, sigma, p=0.95){
+  # give a p% HPD credible interval for a N(mu, sigma) density
   
-  if(is.na(p) | is.nan(p) | p > 1 | p < 0)
-    stop("p not between 0 and 1\n")
-  
-    if(alpha<=1 | beta <=1)
-      stop("betaHPD only implemented for alpha and beta both > 1\n")
-
-  ## initialize internal logical flags
-  compute <- TRUE
-  swap <- FALSE
-
-  if(alpha==beta){
-    if(debug)
-      cat("symmetric case, alpha=",alpha,"beta=",beta,"\n")
-    out <- qbeta((1 + c(-1,1)*p)/2,
-                 alpha,beta)
-    compute <- FALSE
-  }
-  if(alpha>beta){
-    swap <- TRUE
-    alphaStar <- beta
-    betaStar <- alpha
-  }
-  else if(beta>alpha){
-    swap <- FALSE
-    alphaStar <- alpha
-    betaStar <- beta
-  }
-  if(debug)
-    cat("swap=",swap,"\n")
-  
-  func <- function(x0,alpha,beta){
-    y0 <- dbeta(x0,alpha,beta)
-    p0 <- pbeta(x0,alpha,beta)
-    x1 <- qbeta(p0+p,alpha,beta)
-    y1 <- dbeta(x1,alpha,beta)
-    out <- abs(y0-y1)
-    out
-  }
-  
-  if(compute){
-    foo <- try(optimize(f=func,alpha=alphaStar,beta=betaStar,
-                        tol=.Machine$double.eps^(.6),
-                        interval=c(.Machine$double.eps,
-                          qbeta(1-p,
-                                alphaStar,betaStar))))
-    if(inherits(foo,"try-error")){
-      warning("optimization in betaHPD failed\n")
-      out <- rep(NA,2)
-    }
-    else{
-      if(debug){
-        cat("results of optimization:\n")
-        print(foo)
-      }
-      out <- c(foo$minimum,
-               qbeta(pbeta(foo$minimum,alphaStar,betaStar)+p,
-                     alphaStar,betaStar)
-               )
-    }
-    if(swap){
-      out <- 1-out
-      out <- sort(out)
-      if(debug){
-        cat("swapped back\n")
-        print(out)
-      }
-    }
-  }
-
-  ## plotting
-  if(plot & all(!is.na(out))){
-    xseq <- NULL
-    if(length(xlim)==2 & all(!is.na(xlim))){
-      if(xlim[2]>xlim[1] & xlim[1] >= 0 & xlim[2] <= 1){
-        xseq <- seq(xlim[1]+(.Machine$double.eps^(.25)),
-                    xlim[2]+(.Machine$double.eps^(.25)),
-                    length=1000)
-      }
-    }
-    if(is.null(xseq))
-      xseq <- seq(min(qbeta(.0001,alpha,beta),out[1]),
-                  max(qbeta(.9999,alpha,beta),out[2]),
-                  length=1000)
-    
-    plot(xseq,dbeta(xseq,alpha,beta),
-         xlab=expression(theta),
-         ylab="",
-         axes=F,
-         type="n")
-    axis(1)
-
-    ## get polygon for HDR
-    dseq <- seq(out[1],out[2],length=250)
-    fx <- dbeta(dseq,alpha,beta)
-    polygon(x=c(out[1],dseq,rev(dseq)),
-            y=c(0,fx,rep(0,250)),
-            border=F,col=gray(.45))
-    lines(xseq,dbeta(xseq,alpha,beta))
-  }
-
+  out <- rep(0, 2)
+  out[1] <- qnorm(p, mu, sigma, lower.tail = FALSE)
+  out[2] <- qnorm(p, mu, sigma)
   out
 }
 ```
@@ -167,8 +67,10 @@ betaHPD <- function(alpha,beta,p=.95,plot=FALSE,xlim=NULL,debug=FALSE){
 
 ```{r datasets}
 # create data sets for analyses ###
-admissions <- tibble(x = c(rep(1, 18), rep(0, 28))) # data with same mean as UCB admissions data set (~0.39)
-challenger <- tibble(x  = c(0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1)) # challenger o rings in distress
+iris <- tibble(x = datasets::iris$Sepal.Width) %>%  # sepal-width of iris data set
+  head(22) # take first 22 rows
+rock <- tibble(x = datasets::rock$area) %>% # area of rocks in petroleoum reservoir
+  head(17) # take first 17 rows
 ```
 
 
@@ -181,19 +83,19 @@ challenger <- tibble(x  = c(0, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0
 Column {.sidebar data-width=350}
 -------------------------------------
 
-The prior distribution of $p$ is $\mathrm{Beta}(a, b)$, and it characterizes your prior knowledge of $p$. The values $a$ and $b$ are called the *hyperparameters*. 
+The prior distribution of $\mu$ is $\mathrm{\textsf{N}}(\mu_0, \sigma_0)$, and it characterizes your prior knowledge of $\mu$. The values $\mu_0$ and $\sigma_0$ are called the *hyperparameters*. 
 
 
 **Select hyperparameters:**
 
 
-```{r binom.hyperparams}
+```{r norm.hyperparams}
 
-sliderInput("alpha", label = "a",
-            min = 0, max = 10, value = 0.5, step = 0.1)
+numericInput("mu0", label = withMathJax('Mean \\( \\mu_0 \\):'),
+            min = -10000, max = 10000, value = 0)
 
-sliderInput("beta", label = "b",
-            min = 0, max = 10, value = 0.5, step = 0.1)
+numericInput("sigma0", label = withMathJax('Std. deviation \\( \\sigma_0 \\):'),
+            min = 0, max = 10000, value = 1)
 
 
 ```
@@ -201,7 +103,7 @@ sliderInput("beta", label = "b",
 <hr>
 
 
-With the values of $a$ and $b$ that you chose, the prior expected value $\mathbb{E}[p]$ and variance $\mathrm{Var}[p]$ are shown below.
+With the values of $\mu_0$ and $\sigma_0$ that you chose, the prior expected value $\mathbb{E}[\mu]$ and variance $\mathrm{Var} [\mu]$ are shown below.
 
 
 ```{r prior.mean.var}
@@ -209,12 +111,12 @@ With the values of $a$ and $b$ that you chose, the prior expected value $\mathbb
 renderTable({
   
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
   
   # calculate mean and variance
-  mean <- alpha / (alpha + beta)
-  var <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  mean <- mu0
+  var <- sigma0^2
   
   # create table
   summary <- tibble(Mean = round(mean, 2),
@@ -244,34 +146,30 @@ The plot below displays the density of the prior distribution with the hyperpara
 renderPlot({
   
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
-  n <- input$n
-  
-  
-  
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
   
   # calculate mean and variance
-  mean.prior <- alpha / (alpha + beta)
-  var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  tau <- 1 / sigma0^2
+  xmin <- mu0 - 5*sigma0
+  xmax <- mu0 + 5*sigma0
+  ymax <- dnorm(mu0, mu0, sigma0)
   
   
   
-  ggplot(tibble(x = c(0, 1)), aes(x)) +
-    stat_function(fun = dbeta, 
-                  args = list(shape1 = alpha, shape2 = beta),
+  ggplot(tibble(x = c(xmin, xmax)), aes(x)) +
+    stat_function(fun = dnorm, 
+                  args = list(mean = mu0, sd = sigma0),
                   color = "#482173FF",
                   size = 2,
                   n = 1000) + #adds prior density plot
-    geom_segment(aes(x = mean.prior, y = 0, xend = mean.prior, yend = dbeta(mean.prior, alpha, beta)),
+    geom_segment(aes(x = mu0, y = 0, xend = mu0, yend = ymax),
                  size = 1, color = "#482173FF", linetype = "dashed") + # prior mean
-    labs(x = "p",
+    labs(x = expression(mu),
          y = "Density",
          subtitle = "Density of the prior distribution and the prior mean in a dotted line") +
-    xlim(c(0, 1)) +
-    ylim(c(NA, 10)) +
+    xlim(c(xmin, xmax)) +
+    ylim(c(NA, ymax)) +
     theme(text = element_text(size = 16),
           plot.subtitle = element_text(size = 14))
   
@@ -301,37 +199,39 @@ Column {.sidebar data-width=350}
 
 ```{r dataset}
 
-selectInput("binom.data", label = "Select the data you want to analyze:",
-            choices = c("UCBerkeley admissions" = "admissions",
-                        "Challenger disaster o-ring distress" = "challenger",
+selectInput("data", label = "Select the data you want to analyze:",
+            choices = c("Iris sepal width" = "iris",
+                        "Petroleoum reservoir rock areas" = "rock",
                         "Custom data" = "custom",
                         "Generate sample" = "generate"),
-            selected = "admissions")
+            selected = "iris")
 
 ```
 
-Enter the value of $\hat{p}$ from your data
+Enter the value of $\hat{\mu}$ from your data
 
-Enter the "true" value of $p$
+Enter the "true" value of $\mu$
 
-```{r custom.phat}
+```{r custom.muhat}
 
-numericInput("phat", label = withMathJax('\\( \\hat{p} \\text{ or } p \\):'),
-            value = 0.5, min = 0, max = 1,
-            step = 0.05)
+numericInput("muhat", label = "",
+            value = 0, min = -10000, max = 10000)
+
 
 ```
 
 
-Enter the value of the sample size $n$.
+Enter the value of the sample size $n$ and standard deviation $\sigma$.
 
 
 
 ```{r custom.n}
 
 numericInput("n", label = withMathJax('\\( n \\):'),
-            value = 10, min = 0, max = 200,
+            value = 10, min = 0, max = 10000,
             step = 1)
+numericInput("sigma", label = withMathJax('\\( \\sigma \\):'),
+            value = 1, min = 0, max = 10000)
 
 ```
 
@@ -340,45 +240,41 @@ numericInput("n", label = withMathJax('\\( n \\):'),
 
 
 
-The observed $\hat{p}$ is
+The observed $\hat{\mu}$ is
 
 ```{r data.mean}
   
 renderPrint({
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   
   # select data set
-  if(dat.name == "admissions"){
-    binom.dat <- admissions
-    n <- nrow(binom.dat)
-    y.lim <- 8
+  if(dat.name == "iris"){
+    dat <- iris
+    n <- nrow(dat)
   } 
   
-  if(dat.name == "challenger"){
-    binom.dat <- challenger
-    n <- nrow(binom.dat)
-    y.lim <- 12
+  if(dat.name == "rock"){
+    dat <- rock
+    n <- nrow(dat)
   } 
   
   if(dat.name == "custom"){
-    binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-                              rep(0, n - round(n*phat, 0))))
-    y.lim <- 10
+    tmp_dat <- rnorm(n-1, mu, sigma)
+    extra <- n*mu - sum(tmp_dat)
+    dat <- tibble(x = c(tmp_dat, extra))
   }
   
   if(dat.name == "generate"){
-    binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-    y.lim <- 10
+    dat <- tibble(x = rnorm(n, mu, sigma))
   }
   
-  print(mean(binom.dat$x))
+  print(mean(dat$x))
   
-  saveRDS(binom.dat, file = "binom_dat.RDS")
+  saveRDS(dat, file = "norm_dat.RDS")
 })  
 
 ```
@@ -402,38 +298,19 @@ The plot below displays the observed data as black points (when available), the 
 renderPlot({
 
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 8
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 12
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  #   y.lim <- 10
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  #   y.lim <- 10
-  # }
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
+  
+  # define sd and mean
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
+  xbar <- mean(dat$x)
   
   
   colors <- c("Prior" = "#482173FF", 
@@ -441,71 +318,41 @@ renderPlot({
               "Posterior" = "#1E9B8AFF")
   
   
-  # data
-  # data_plot <- binom.dat %>% 
-  #   ggplot(aes(x)) +
-  #   geom_histogram(bins = 4) +
-  #   scale_x_discrete(breaks = c(0, 1),
-  #                    labels = c(0, 1))
-  
-  data_plot <- binom.dat %>% 
-    dplyr::mutate(x = factor(x, levels = c("1", "0"))) %>% 
-    dplyr::group_by(x) %>% 
-    dplyr::summarise(n = n()) %>% 
-    dplyr::mutate(dat = "dat",
-                  perc = n / nrow(binom.dat),
-                  cumperc = cumsum(perc),
-                  cum_n = cumsum(n),
-                  cum_n = cum_n - n/2,
-                  perc_label = paste0("x = ", x, ":\n", n, "\n", "(", round(100*perc, 1), "%)")) %>% 
-    ggplot(aes(dat, n, fill = x)) +
-    geom_bar(stat = "identity",
-             position = "stack",
-             fill="white",
-             color = "black") +
-    geom_text(aes(y = cum_n, label = perc_label),
-              size = 6) +
-    labs(x = "",
-         y = "sample size n",
-         subtitle = "Number and percentage of observed 0's and 1's") +
-    theme(text = element_text(size = 16),
-          plot.subtitle = element_text(size = 14),
-          axis.text.y = element_blank(),
-          axis.ticks.y = element_blank(),
-          axis.line.y = element_blank()) +
-    coord_flip()
-    
-  
-  
-  
-  
-  # likelihood
-  likelihood_plot <- ggplot(tibble(x = binom.dat %>% 
-                               mutate(x = ifelse(x == 1, 0.97, 0.03)) %>% 
-                               pull(), y = rep(0, n))) +
-    stat_function(fun = dbeta, 
-                  args = list(shape1 = sum(binom.dat$x) + 1, shape2 = n - sum(binom.dat$x) + 1),
-                  aes(color = "Likelihood"),
-                  size = 2,
-                  n = 1000) + #adds likelihood density plot
-    geom_segment(aes(x = sum(binom.dat$x) / n, y = 0, xend = sum(binom.dat$x) / n, yend = dbeta(sum(binom.dat$x) / n, sum(binom.dat$x) + 1, n - sum(binom.dat$x) + 1)),
-                 color = "#C2DF23FF", size = 1, linetype = "dashed") + # data mean
-    scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
-    labs(x = "p",
-         y = "",
-         color = "",
-         subtitle = expression(paste("Data likelihood in green and observed value of ", hat(p), " in a green dotted line"))) +
-    xlim(c(0, 1)) +
-    #ylim(c(NA, y.lim)) +
+  data_plot <- dat %>% 
+    ggplot(aes(x)) +
+    geom_histogram(color = "black", fill = "white") +
+    xlim(c(xbar - 5*sigma, xbar + 5*sigma)) +
+    labs(x = "Data",
+         y = "Count",
+         subtitle = "Histogram of the data") +
     theme(text = element_text(size = 16),
           plot.subtitle = element_text(size = 14))
   
   
-  #if(dat.name %in% c("admissions", "challenger")) set.seed(2020)
-  #if(dat.name != "custom") likelihood_plot <- likelihood_plot + geom_jitter(aes(x, y), width = 0.02, size = 2) # add data points
+  # likelihood
+  likelihood_plot <- dat %>% 
+    ggplot() +
+    stat_function(fun = dnorm, 
+                  args = list(mean = mean(dat$x), sd = sigma),
+                  aes(color = "Likelihood"),
+                  size = 2,
+                  n = 1000) + #adds likelihood density plot
+    geom_segment(aes(x = xbar, y = 0, xend = xbar, yend = dnorm(xbar, xbar, sigma)),
+                 color = "#C2DF23FF", size = 1, linetype = "dashed") + # data mean
+    scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
+    labs(x = expression(mu),
+         y = "",
+         color = "",
+         subtitle = expression(paste("Data likelihood in green and observed value of ", hat(mu), " in a green dotted line"))) +
+    xlim(c(xbar - 5*sigma, xbar + 5*sigma)) +
+    ylim(c(NA, dnorm(xbar, xbar, sigma)*1.1)) +
+    theme(text = element_text(size = 16),
+          plot.subtitle = element_text(size = 14))
+  
+  
     
    data_plot / likelihood_plot + 
-  plot_layout(heights = c(1, 3))
+  plot_layout(heights = c(2, 3))
     
   
 
@@ -527,22 +374,27 @@ function detect_change() {
     }
     
     const n = document.querySelector("#n");
+    const sigma = document.querySelector("#sigma");
     
-    const p_box = document.querySelector("#phat");
-    p_label = document.querySelector("[for='phat']")
+    const mu_box = document.querySelector("#muhat");
+    mu_label = document.querySelector("[for='muhat']")
     switch (this.value) {
-        case 'admissions':
-            n.value = 46;
+        case 'iris':
+            n.value = 22;
             n.setAttribute("disabled", "disabled");
-            p_box.style.display = 'None';
-            p_label.style.display = 'None';
+            sigma.value = 0.4;
+            sigma.setAttribute("disabled", "disabled");
+            mu_box.style.display = 'None';
+            mu_label.style.display = 'None';
             paragraphs[index].style.display = 'None';
             paragraphs[index+1].style.display = 'None';
             paragraphs[index+2].style.display = 'None';
             break;
-        case 'challenger':
-            n.value = 23;
+        case 'rock':
+            n.value = 17;
             n.setAttribute("disabled", "disabled");
+            sigma.value = 1500;
+            sigma.setAttribute("disabled", "disabled");
             p_box.style.display = 'None';
             p_label.style.display = 'None';
             paragraphs[index].style.display = 'None';
@@ -551,29 +403,33 @@ function detect_change() {
             break;
         case 'custom':
             n.removeAttribute("disabled");
+            sigma.removeAttribute("disabled");
             paragraphs[index].style.display = 'block';
             paragraphs[index+1].style.display = 'None';
             paragraphs[index+2].style.display = 'block';
             document.querySelector("#MathJax-Span-66").style.display = 'inline';
             document.querySelector("#MathJax-Span-67").style.display = 'None';
             document.querySelector("#MathJax-Span-68").style.display = 'None';
-            p_box.style.display = 'block';
-            p_label.style.display = 'block';
-            p_box.value = 0.5;
+            mu_box.style.display = 'block';
+            mu_label.style.display = 'block';
+            mu_box.value = 0.5;
             n.value = 10;
+            sigma.value = 1;
             break;
         case 'generate':
             n.removeAttribute("disabled");
+            sigma.removeAttribute("disabled");
             paragraphs[index].style.display = 'None';
             paragraphs[index+1].style.display = 'block';
             paragraphs[index+2].style.display = 'block';
             document.querySelector("#MathJax-Span-66").style.display = 'None';
             document.querySelector("#MathJax-Span-67").style.display = 'None';
             document.querySelector("#MathJax-Span-68").style.display = 'block';
-            p_box.style.display = 'block';
-            p_label.style.display = 'block';
-            p_box.value = 0.5;
+            mu_box.style.display = 'block';
+            mu_label.style.display = 'block';
+            mu_box.value = 0.5;
             n.value = 10;
+            sigma.value = 1;
     }
  }
  
@@ -606,49 +462,36 @@ The table below contains the mean, quantiles, and variance of the posterior dist
 
 renderTable({
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 8
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 12
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  #   y.lim <- 10
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  #   y.lim <- 10
-  # }
   
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
+  
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
   
   
   # posterior values
-  alpha.post <- alpha + sum(binom.dat$x)
-  beta.post <- beta + n - sum(binom.dat$x)
-  mean.post <- alpha.post / (alpha.post + beta.post)
-  var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
-  q1.post <- qbeta(p = 0.25, shape1 = alpha.post, shape2 = beta.post)
-  median.post <- qbeta(p = 0.5, shape1 = alpha.post, shape2 = beta.post)
-  q3.post <- qbeta(p = 0.75, shape1 = alpha.post, shape2 = beta.post)
+  xbar <- mean(dat$x)
+  tau0 <- 1 / sigma0^2
+  tau <- 1 / sigma^2
+  tau1 <- tau0 + n*tau
+  mu1 <- (tau0*mu0 + n*tau*xbar) / tau1
+  sigma1 <- 1 / sqrt(tau1)
+  
+  # define table values
+  mean.post <- mu1
+  var.post <- sigma1^2
+  q1.post <- qnorm(p = 0.25, mean = mu1, sd = sigma1)
+  median.post <- qnorm(p = 0.5, mean = mu1, sd = sigma1)
+  q3.post <- qnorm(p = 0.75, mean = mu1, sd = sigma1)
   
   # summary table
   if(mean.post < median.post){
@@ -681,7 +524,7 @@ numericInput("significance", label = withMathJax('\\( \\alpha \\):'),
 
 
 
-A $(1-\alpha) \times 100$% credible interval for $p$ is given by:
+A $(1-\alpha) \times 100$% credible interval for $\mu$ is given by:
 
 
 
@@ -692,48 +535,33 @@ A $(1-\alpha) \times 100$% credible interval for $p$ is given by:
 
 renderTable({
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   significance <- input$significance
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 8
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 12
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  #   y.lim <- 10
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  #   y.lim <- 10
-  # }
   
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
+  
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
   
   
   # posterior values
-  alpha.post <- alpha + sum(binom.dat$x)
-  beta.post <- beta + n - sum(binom.dat$x)
+  xbar <- mean(dat$x)
+  tau0 <- 1 / sigma0^2
+  tau <- 1 / sigma^2
+  tau1 <- tau0 + n*tau
+  mu1 <- (tau0*mu0 + n*tau*xbar) / tau1
+  sigma1 <- 1 / sqrt(tau1)
   
   # create tabe with CI
-  ci <- betaHPD(alpha.post, beta.post, 1-significance)
+  ci <- normalHPD(mu1, sigma1, 1-significance)
   summary <- tibble(Lower = ci[1], Upper = ci[2])
   
   print(summary, digits = 4)
@@ -759,68 +587,58 @@ Density of the posterior distribution of $p$, posterior mean in a dashed line, $
 renderPlot({
   
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   significance <- input$significance
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  # }
   
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
+  
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
+  
+  
+  # posterior values
+  xbar <- mean(dat$x)
+  tau0 <- 1 / sigma0^2
+  tau <- 1 / sigma^2
+  tau1 <- tau0 + n*tau
+  mu1 <- (tau0*mu0 + n*tau*xbar) / tau1
+  sigma1 <- 1 / sqrt(tau1)
+  ci <- normalHPD(mu1, sigma1, 1-significance)
   
   
   colors <- c("Prior" = "#482173FF", 
               "Likelihood" = "#C2DF23FF", 
               "Posterior" = "#1E9B8AFF")
   
-  # posterior values
-  alpha.post <- alpha + sum(binom.dat$x)
-  beta.post <- beta + n - sum(binom.dat$x)
+
   
-  # calculate posterior stats
-  mean.post <- alpha.post / (alpha.post + beta.post)
-  ci <- betaHPD(alpha.post, beta.post, 1-significance)
   
-  ggplot(tibble(x = c(0, 1)), aes(x)) +
-    stat_function(fun = dbeta, 
-                  args = list(shape1 = alpha.post, shape2 = beta.post),
+  ggplot(tibble(x = c(mu1 - 5*sigma1, mu1 + 5*sigma1)), aes(x)) +
+    stat_function(fun = dnorm, 
+                  args = list(mean = mu1, sd = sigma1),
                   aes(color = "Posterior"),
                   size = 2,
                   n = 1000) + #adds posterior density plot
-    geom_segment(aes(x = mean.post, y = 0, xend = mean.post, yend = dbeta(mean.post, alpha.post, beta.post)),
+    geom_segment(aes(x = mu1, y = 0, xend = mu1, yend = dnorm(mu1, mu1, sigma1)),
                  size = 1, color = "#1E9B8AFF", linetype = "dashed") + # posterior mean
-    geom_segment(aes(x = ci[1], y = 0, xend = ci[1], yend = dbeta(ci[1], alpha.post, beta.post)),
+    geom_segment(aes(x = ci[1], y = 0, xend = ci[1], yend = dnorm(ci[1], mu1, sigma1)),
                  linetype = "dotted", size = 1, color = "#1E9B8AFF") + # lower ci bound
-    geom_segment(aes(x = ci[2], y = 0, xend = ci[2], yend = dbeta(ci[2], alpha.post, beta.post)),
+    geom_segment(aes(x = ci[2], y = 0, xend = ci[2], yend = dnorm(ci[2], mu1, sigma1)),
                  linetype = "dotted", size = 1, color = "#1E9B8AFF") + # upper ci bound
     scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
-    labs(x = "p",
+    labs(x = expression(mu),
          y = "Density",
          color = " ",
-         subtitle = expression(paste("Density of the posterior distribution of p, posterior mean in a dashed line, ",  (1-alpha), " x100% credible interval in dashed lines."))) +
-    xlim(c(0, 1)) +
+         subtitle = expression(paste("Density of the posterior distribution of ", mu, ", posterior mean in a dashed line, ",  (1-alpha), " x100% credible interval in dashed lines."))) +
+    xlim(c(mu1 - 5*sigma1, mu1 + 5*sigma1)) +
     theme(text = element_text(size = 16),
           plot.subtitle = element_text(size = 14))
   
@@ -847,113 +665,44 @@ Column {.sidebar data-width=350}
 The table below contains summary statistics for the prior, data, and posterior.
 
 ```{r summary.table}
-# DT::renderDataTable({
-#   # read inputs
-#   alpha <- input$alpha
-#   beta <- input$beta
-#   dat.name <- input$binom.data
-#   phat <- input$phat
-#   n <- input$n
-#   
-#   # select data set
-#   if(dat.name == "admissions"){
-#     binom.dat <- admissions
-#     n <- nrow(binom.dat)
-#     y.lim <- 8
-#   } 
-#   
-#   if(dat.name == "challenger"){
-#     binom.dat <- challenger
-#     n <- nrow(binom.dat)
-#     y.lim <- 12
-#   } 
-#   
-#   if(dat.name == "custom"){
-#     binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-#                               rep(0, n - round(n*phat, 0))))
-#     y.lim <- 10
-#   }
-#   
-#   if(dat.name == "generate"){
-#     binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-#     y.lim <- 10
-#   }
-#   
-#   # prior values
-#   mean.prior <- alpha / (alpha + beta)
-#   var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
-#   
-#   # data values
-#   mean.data <- mean(binom.dat$x)
-#   var.data <- var(binom.dat$x)
-#   
-#   # posterior values
-#   alpha.post <- alpha + sum(binom.dat$x)
-#   beta.post <- beta + n - sum(binom.dat$x)
-#   mean.post <- alpha.post / (alpha.post + beta.post)
-#   var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
-#   
-#   # summary table
-#   summary <- data.frame(Mean = c(round(mean.prior, 2), round(mean.data, 2), round(mean.post, 2)),
-#                         Variance = c(round(var.prior, 2), round(var.data, 2), round(var.post, 2)))
-#   rownames(summary) <- c("Prior", "Data", "Posterior")
-#   
-#   DT::datatable(summary, options = list(bPaginate = FALSE), 
-#                 class = "compact", filter = "none", autoHideNavigation = TRUE, selection = "none")
-#   
-# })  
-
-
 
 renderTable({
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 8
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 12
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  #   y.lim <- 10
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  #   y.lim <- 10
-  # }
   
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
   
-  # prior values
-  mean.prior <- alpha / (alpha + beta)
-  var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
   
-  # data values
-  mean.data <- mean(binom.dat$x)
-  var.data <- var(binom.dat$x)
   
   # posterior values
-  alpha.post <- alpha + sum(binom.dat$x)
-  beta.post <- beta + n - sum(binom.dat$x)
-  mean.post <- alpha.post / (alpha.post + beta.post)
-  var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
+  xbar <- mean(dat$x)
+  tau0 <- 1 / sigma0^2
+  tau <- 1 / sigma^2
+  tau1 <- tau0 + n*tau
+  mu1 <- (tau0*mu0 + n*tau*xbar) / tau1
+  sigma1 <- 1 / sqrt(tau1)
+  
+  # prior values
+  mean.prior <- mu0
+  var.prior <- sigma0^2
+  
+  # data values
+  mean.data <- mean(dat$x)
+  var.data <- var(dat$x)
+  
+  # posterior values
+  mean.post <- mu1
+  var.post <- sigma1^2
   
   # summary table
   summary <- tibble(" " = c("Prior", "Data", "Posterior"),
@@ -972,7 +721,7 @@ renderTable({
 
 **Hyperparameter updates**
 
-The table below contains the original and updated hyperparameters. The posterior distribution of $p$ is $\mathrm{Beta}(a', b')$, where $a'$ and $b'$ are the values in the second row.
+The table below contains the original and updated hyperparameters. The posterior distribution of $\mu$ is $\mathrm{\textsf{N}}(\mu_1, \sigma_1^2)$, where $\mu_1$ and $\sigma_1$ are the values in the second row.
 
 
 
@@ -980,50 +729,35 @@ The table below contains the original and updated hyperparameters. The posterior
 
 renderTable({
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
-  significance <- input$significance
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 8
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 12
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  #   y.lim <- 10
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  #   y.lim <- 10
-  # }
   
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
+  
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
   
   
   # posterior values
-  alpha.post <- alpha + sum(binom.dat$x)
-  beta.post <- beta + n - sum(binom.dat$x)
+  xbar <- mean(dat$x)
+  tau0 <- 1 / sigma0^2
+  tau <- 1 / sigma^2
+  tau1 <- tau0 + n*tau
+  mu1 <- (tau0*mu0 + n*tau*xbar) / tau1
+  sigma1 <- 1 / sqrt(tau1)
+  
   
   # create tabe with CI
   summary <- tibble(" " = c("Original", "Updated"),
-                    a = c(alpha, alpha.post),
-                    b = c(beta, beta.post))
+                    mean = c(mu0, mu1),
+                    sd = c(sigma0, sigma1))
   
   print(summary, digits = 4)
   
@@ -1049,39 +783,54 @@ Column
 renderPlot({
   
   # read inputs
-  alpha <- input$alpha
-  beta <- input$beta
-  dat.name <- input$binom.data
-  phat <- input$phat
+  mu0 <- input$mu0
+  sigma0 <- input$sigma0
+  mu <- input$muhat
+  sigma <- input$sigma
+  dat.name <- input$data
   n <- input$n
   
-  # select data set
-  # if(dat.name == "admissions"){
-  #   binom.dat <- admissions
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 8
-  # } 
-  # 
-  # if(dat.name == "challenger"){
-  #   binom.dat <- challenger
-  #   n <- nrow(binom.dat)
-  #   y.lim <- 12
-  # } 
-  # 
-  # if(dat.name == "custom"){
-  #   binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
-  #                             rep(0, n - round(n*phat, 0))))
-  #   y.lim <- 10
-  # }
-  # 
-  # if(dat.name == "generate"){
-  #   binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
-  #   y.lim <- 10
-  # }
   
-  binom.dat <- readRDS("binom_dat.RDS")
-  n <- nrow(binom.dat)
-  y.lim <- 12
+  # read data
+  dat <- readRDS("norm_dat.RDS")
+  n <- nrow(dat)
+  
+  if(dat.name == "iris") sigma <- 0.4
+  if(dat.name == "rock") sigma <- 1500
+  
+  
+  # posterior values
+  xbar <- mean(dat$x)
+  tau0 <- 1 / sigma0^2
+  tau <- 1 / sigma^2
+  tau1 <- tau0 + n*tau
+  mu1 <- (tau0*mu0 + n*tau*xbar) / tau1
+  sigma1 <- 1 / sqrt(tau1)
+  
+  # prior values
+  mean.prior <- mu0
+  var.prior <- sigma0^2
+  
+  # data values
+  mean.data <- mean(dat$x)
+  var.data <- var(dat$x)
+  
+  # posterior values
+  mean.post <- mu1
+  var.post <- sigma1^2
+  
+  # limits
+  if(sigma0 > 100*sigma1){
+    # if prior variance is super large, then prior is considered non-informative
+    xmin <- min(xbar - 3*sigma, mu1 - 3*sigma1)
+    xmax <- max(xbar + 3*sigma, mu1 + 3*sigma1)
+  }else{
+    # if prior is informative, then plot correctly
+    xmin <- min(mu0 - 3*sigma0, xbar - 3*sigma, mu1 - 3*sigma1)
+    xmax <- max(mu0 + 3*sigma0, xbar + 3*sigma, mu1 + 3*sigma1)
+  }
+  
+  
   
   
   colors <- c("Prior" = "#482173FF", 
@@ -1089,50 +838,34 @@ renderPlot({
               "Posterior" = "#1E9B8AFF")
   
   
-  # prior values
-  mean.prior <- alpha / (alpha + beta)
-  var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
-  
-  # data values
-  mean.data <- mean(binom.dat$x)
-  var.data <- var(binom.dat$x)
-  
-  # posterior values
-  alpha.post <- alpha + sum(binom.dat$x)
-  beta.post <- beta + n - sum(binom.dat$x)
-  mean.post <- alpha.post / (alpha.post + beta.post)
-  var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
-  
-  
-  
-  ggplot(tibble(x = c(0, 1)), aes(x)) +
-    stat_function(fun = dbeta, 
-                  args = list(shape1 = alpha, shape2 = beta),
+  ggplot(tibble(x = c(xmin, xmax)), aes(x)) +
+    stat_function(fun = dnorm, 
+                  args = list(mean = mu0, sd = sigma0),
                   aes(color = "Prior"),
                   size = 2,
                   n = 1000) + #adds prior density plot
-    geom_segment(aes(x = mean.prior, y = 0, xend = mean.prior, yend = dbeta(mean.prior, alpha, beta)),
+    geom_segment(aes(x = mean.prior, y = 0, xend = mean.prior, yend = dnorm(mean.prior, mu0, sigma0)),
                  size = 1, color = "#482173FF", linetype = "dashed") + # prior mean
-    stat_function(fun = dbeta, 
-                  args = list(shape1 = sum(binom.dat$x) + 1, shape2 = n - sum(binom.dat$x) + 1),
+    stat_function(fun = dnorm, 
+                  args = list(mean = xbar, sd = sigma),
                   aes(color = "Likelihood"),
                   size = 2,
                   n = 1000) + #adds likelihood density plot
-    geom_segment(aes(x = sum(binom.dat$x) / n, y = 0, xend = sum(binom.dat$x) / n, yend = dbeta(sum(binom.dat$x) / n, sum(binom.dat$x) + 1, n - sum(binom.dat$x) + 1)), 
+    geom_segment(aes(x = xbar, y = 0, xend = xbar, yend = dnorm(xbar, xbar, sigma)), 
                  color = "#C2DF23FF", size = 1, linetype = "dashed") + # data mean
-    stat_function(fun = dbeta, 
-                  args = list(shape1 = alpha + sum(binom.dat$x), shape2 = beta + n - sum(binom.dat$x)),
+    stat_function(fun = dnorm, 
+                  args = list(mean = mu1, sd = sigma1),
                   aes(color = "Posterior"),
                   size = 2,
                   n = 1000) + #adds posterior density plot
-    geom_segment(aes(x = mean.post, y = 0, xend = mean.post, yend = dbeta(mean.post, alpha.post, beta.post)),
+    geom_segment(aes(x = mean.post, y = 0, xend = mean.post, yend = dnorm(mean.post, mu1, sigma1)),
                  size = 1, color = "#1E9B8AFF", linetype = "dashed") + # posterior mean
     scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
-    labs(x = "p",
+    labs(x = expression(mu),
          y = "Density",
          color = "Density:",
          subtitle = "Triplot: prior, likelihood, and posterior on the same display") +
-    xlim(c(0, 1)) +
+    xlim(c(xmin, xmax)) +
     theme(text = element_text(size = 16),
           plot.subtitle = element_text(size = 14))
   
