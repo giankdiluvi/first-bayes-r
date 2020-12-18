@@ -1,11 +1,12 @@
 ---
-title: "**First Bayes: Beta-Binomial**"
+title: "**First Bayes: Normal-Normal**"
 author: ""
 output: 
   flexdashboard::flex_dashboard:
     theme: lumen
     vertical_layout: fill
     orientation: columns
+    source_code: https://github.com/GiankDiluvi/first-bayes-r
 runtime: shiny
 ---
 
