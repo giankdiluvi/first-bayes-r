@@ -62,8 +62,8 @@ betaHPD <- function(alpha,beta,p=.95,plot=FALSE,xlim=NULL,debug=FALSE){
   if(is.na(p) | is.nan(p) | p > 1 | p < 0)
     stop("p not between 0 and 1\n")
   
-    if(alpha<=1 | beta <=1)
-      stop("betaHPD only implemented for alpha and beta both > 1\n")
+    #if(alpha<=1 | beta <=1)
+    #  stop("betaHPD only implemented for alpha and beta both > 1\n")
 
   ## initialize internal logical flags
   compute <- TRUE
