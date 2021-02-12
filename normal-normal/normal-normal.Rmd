@@ -95,7 +95,7 @@ numericInput("mu0", label = withMathJax('Mean \\( \\mu_0 \\):'),
             min = -10000, max = 10000, value = 0)
 
 numericInput("sigma0", label = withMathJax('Std. deviation \\( \\sigma_0 \\):'),
-            min = 0, max = 10000, value = 1)
+            min = 0, max = 10000, value = 1, step = 0.1)
 
 
 ```
@@ -221,7 +221,7 @@ numericInput("muhat", label = "",
 ```
 
 
-Enter the value of the sample size $n$ and standard deviation $\sigma$.
+Enter the value of the sample size $n$ and known standard deviation $\sigma$.
 
 
 
@@ -512,7 +512,7 @@ renderTable({
 
 **Credible intervals**
 
-In the type-in box below, enter the level $\alpha$ of the credible interval:
+In the type-in box below, enter the level $\alpha$ of the $(1-\alpha) \times 100$% credible interval:
 
 ```{r custom.alpha}
 
