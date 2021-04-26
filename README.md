@@ -8,5 +8,5 @@ This R Shiny version of First Bayes was developed by the Flexible Learning team 
 
 ### Directory roadmap
 
-* `beta-binomial` contains the code for the [binary data analysis](https://shiny-apps.stat.ubc.ca/FlexibleLearning/FirstBayes/Beta-Binomial/)
-* `normal-normal` contains the code for the [Normal data analysis](https://shiny-apps.stat.ubc.ca/FlexibleLearning/FirstBayes/Normal-Normal/)
+* `beta-binomial` contains the code for the [binary data analysis](https://shiny-apps.stat.ubc.ca/FlexibleLearning/FirstBayes/Beta-Binomial/) shiny app (included in hyperlink)
+* `normal-normal` contains the code for the [Normal data analysis](https://shiny-apps.stat.ubc.ca/FlexibleLearning/FirstBayes/Normal-Normal/) shiny app (included in hyperlink)
