@@ -167,7 +167,7 @@ betaHPD <- function(alpha,beta,p=.95,plot=FALSE,xlim=NULL,debug=FALSE){
 
 ```{r datasets}
 # create data sets for analyses ###
-admissions <- tibble(x = c(rep(1, 18), rep(0, 28))) # data with same mean as UCB admissions data set (~0.39)
+dog <- tibble(x = c(rep(1, 33), rep(0, 3)))        # dog identifies 33 of 36 cancer tests; https://gut.bmj.com/content/60/6/814
 delta <- tibble(x  = c(0,1,1,1,1,1,1,1,1,1,1,1,1)) # delta IV heavy launches
 ```
 
@@ -302,11 +302,11 @@ Column {.sidebar data-width=350}
 ```{r dataset}
 
 selectInput("binom.data", label = "Select the data you want to analyze:",
-            choices = c("UCBerkeley admissions" = "admissions",
-                        "Delta IV Heavy launches" = "delta",
+            choices = c("Delta IV Heavy launches" = "delta",
+                        "Dog cancer test detection" = "dog",
                         "Custom data" = "custom",
                         "Generate sample" = "generate"),
-            selected = "admissions")
+            selected = "delta")
 
 ```
 
@@ -353,8 +353,8 @@ renderPrint({
   n <- input$n
   
   # select data set
-  if(dat.name == "admissions"){
-    binom.dat <- admissions
+  if(dat.name == "dog"){
+    binom.dat <- dog
     n <- nrow(binom.dat)
     y.lim <- 8
   } 
@@ -496,8 +496,8 @@ function detect_change() {
     const p_box = document.querySelector("#phat");
     p_label = document.querySelector("[for='phat']")
     switch (this.value) {
-        case 'admissions':
-            n.value = 46;
+        case 'dog':
+            n.value = 36;
             n.setAttribute("disabled", "disabled");
             p_box.style.display = 'None';
             p_label.style.display = 'None';
