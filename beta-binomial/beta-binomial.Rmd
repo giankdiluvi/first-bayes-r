@@ -587,6 +587,7 @@ renderTable({
   alpha.post <- alpha + sum(binom.dat$x)
   beta.post <- beta + n - sum(binom.dat$x)
   mean.post <- alpha.post / (alpha.post + beta.post)
+  mode.post <- (alpha.post-1)/(alpha.post+beta.post-2)
   var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
   q1.post <- qbeta(p = 0.25, shape1 = alpha.post, shape2 = beta.post)
   median.post <- qbeta(p = 0.5, shape1 = alpha.post, shape2 = beta.post)
@@ -594,11 +595,11 @@ renderTable({
   
   # summary table
   if(mean.post < median.post){
-    summary <- tibble(" " = c("Q1", "Mean", "Median", "Q3", "Variance"),
-                      Value = c(round(q1.post, 2), round(mean.post, 2), round(median.post, 2), round(q3.post, 2), as.character(round(var.post, 4))))
+    summary <- tibble(" " = c("Q1", "Mean", "Median", "Mode", "Q3", "Variance"),
+                      Value = c(round(q1.post, 2), round(mean.post, 2), round(median.post, 2), round(mode.post, 2), round(q3.post, 2), as.character(round(var.post, 4))))
   }else{
-    summary <- tibble(" " = c("Q1", "Median", "Mean", "Q3", "Variance"),
-                      Value = c(round(q1.post, 2), round(median.post, 2), round(mean.post, 2), round(q3.post, 2), as.character(round(var.post, 4))))
+    summary <- tibble(" " = c("Q1", "Median", "Mean", "Mode", "Q3", "Variance"),
+                      Value = c(round(q1.post, 2), round(median.post, 2), round(mean.post, 2), round(mode.post, 2), round(q3.post, 2), as.character(round(var.post, 4))))
   }
   
   print(summary)
