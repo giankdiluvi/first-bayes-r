@@ -34,7 +34,8 @@ If you find our resources useful, consider citing
 **APA**
 
 Diluvi, G.C., Dunham, B., Heckman, N., and Lee, M. (2022). 
-Structured, interactive resources for teaching Bayesian inference. *arXiv:2308.15613.*
+Structured, interactive resources for teaching Bayesian inference. 
+In *International Conference on Teaching Statistics.*
 
 
 ### Directory roadmap
