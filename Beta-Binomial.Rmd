@@ -1,0 +1,909 @@
+---
+title: "**First Bayes: Beta-Binomial**"
+author: ""
+output: 
+  flexdashboard::flex_dashboard:
+    theme: lumen
+    vertical_layout: fill
+    orientation: columns
+    source_code: https://github.com/GiankDiluvi/first-bayes-r
+runtime: shiny
+---
+
+<style type="text/css">
+
+.sidebar {  /* sidebar  */
+   font-size: 14px;
+   font-family: Helvetica;
+   }
+.navbar-inverse .navbar{
+  font-family: Helvetica;
+}
+.navbar-inverse .navbar-brand{
+  font-family: Helvetica;
+  color: #000000;
+  pointer-events: none;
+}
+</style>
+
+
+
+
+```{r global, include=FALSE, warning = FALSE}
+# preamble ###
+# basics
+library(flexdashboard)
+library(tidyverse)
+# plotting
+library(ggplot2)
+ggplot2::theme_set(theme_classic())
+library(viridis)
+library(patchwork)
+# markdown
+library(knitr)
+library(kableExtra)
+# shiny + html
+library(shiny)
+withMathJax()
+library(DT)
+# extras
+#library(pscl)
+set.seed(2020)
+```
+
+
+```{r}
+# taken from package pscl (not installed in shiny-servetr.stat.ubc)
+# code: https://github.com/cran/pscl/blob/master/R/betaHPD.r
+# author: Simon Jackman
+# todo: install package pscl in stat server and use that instead
+betaHPD <- function(alpha,beta,p=.95,plot=FALSE,xlim=NULL,debug=FALSE){
+  
+  if(is.na(p) | is.nan(p) | p > 1 | p < 0)
+    stop("p not between 0 and 1\n")
+  
+    #if(alpha<=1 | beta <=1)
+    #  stop("betaHPD only implemented for alpha and beta both > 1\n")
+
+  ## initialize internal logical flags
+  compute <- TRUE
+  swap <- FALSE
+
+  if(alpha==beta){
+    if(debug)
+      cat("symmetric case, alpha=",alpha,"beta=",beta,"\n")
+    out <- qbeta((1 + c(-1,1)*p)/2,
+                 alpha,beta)
+    compute <- FALSE
+  }
+  if(alpha>beta){
+    swap <- TRUE
+    alphaStar <- beta
+    betaStar <- alpha
+  }
+  else if(beta>alpha){
+    swap <- FALSE
+    alphaStar <- alpha
+    betaStar <- beta
+  }
+  if(debug)
+    cat("swap=",swap,"\n")
+  
+  func <- function(x0,alpha,beta){
+    y0 <- dbeta(x0,alpha,beta)
+    p0 <- pbeta(x0,alpha,beta)
+    x1 <- qbeta(p0+p,alpha,beta)
+    y1 <- dbeta(x1,alpha,beta)
+    out <- abs(y0-y1)
+    out
+  }
+  
+  if(compute){
+    foo <- try(optimize(f=func,alpha=alphaStar,beta=betaStar,
+                        tol=.Machine$double.eps^(.6),
+                        interval=c(.Machine$double.eps,
+                          qbeta(1-p,
+                                alphaStar,betaStar))))
+    if(inherits(foo,"try-error")){
+      warning("optimization in betaHPD failed\n")
+      out <- rep(NA,2)
+    }
+    else{
+      if(debug){
+        cat("results of optimization:\n")
+        print(foo)
+      }
+      out <- c(foo$minimum,
+               qbeta(pbeta(foo$minimum,alphaStar,betaStar)+p,
+                     alphaStar,betaStar)
+               )
+    }
+    if(swap){
+      out <- 1-out
+      out <- sort(out)
+      if(debug){
+        cat("swapped back\n")
+        print(out)
+      }
+    }
+  }
+
+  ## plotting
+  if(plot & all(!is.na(out))){
+    xseq <- NULL
+    if(length(xlim)==2 & all(!is.na(xlim))){
+      if(xlim[2]>xlim[1] & xlim[1] >= 0 & xlim[2] <= 1){
+        xseq <- seq(xlim[1]+(.Machine$double.eps^(.25)),
+                    xlim[2]+(.Machine$double.eps^(.25)),
+                    length=1000)
+      }
+    }
+    if(is.null(xseq))
+      xseq <- seq(min(qbeta(.0001,alpha,beta),out[1]),
+                  max(qbeta(.9999,alpha,beta),out[2]),
+                  length=1000)
+    
+    plot(xseq,dbeta(xseq,alpha,beta),
+         xlab=expression(theta),
+         ylab="",
+         axes=F,
+         type="n")
+    axis(1)
+
+    ## get polygon for HDR
+    dseq <- seq(out[1],out[2],length=250)
+    fx <- dbeta(dseq,alpha,beta)
+    polygon(x=c(out[1],dseq,rev(dseq)),
+            y=c(0,fx,rep(0,250)),
+            border=F,col=gray(.45))
+    lines(xseq,dbeta(xseq,alpha,beta))
+  }
+
+  out
+}
+```
+
+
+
+```{r datasets}
+# create data sets for analyses ###
+dog <- tibble(x = c(rep(1, 33), rep(0, 3)))        # dog identifies 33 of 36 cancer tests; https://gut.bmj.com/content/60/6/814
+delta <- tibble(x  = c(0,1,1,1,1,1,1,1,1,1,1,1,1)) # delta IV heavy launches
+```
+
+
+
+**Prior distribution**
+=====================================
+
+
+
+Column {.sidebar data-width=350}
+-------------------------------------
+
+The prior distribution of $p$ is $\mathrm{Beta}(a, b)$, and it characterizes your prior knowledge of $p$. The values $a$ and $b$ are called the *hyperparameters*. 
+
+
+**Select hyperparameters:**
+
+
+```{r binom.hyperparams}
+
+sliderInput("alpha", label = "a",
+            min = 0, max = 10, value = 4, step = 0.1)
+
+sliderInput("beta", label = "b",
+            min = 0, max = 10, value = 4, step = 0.1)
+
+
+```
+
+<hr>
+
+
+With the values of $a$ and $b$ that you chose, the prior expected value $\mathbb{E}[p]$ and variance $\mathrm{Var}[p]$ are shown below.
+
+
+```{r prior.mean.var}
+
+renderTable({
+  
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  
+  # calculate mean and variance
+  mean <- alpha / (alpha + beta)
+  var <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  
+  # create table
+  summary <- tibble(Mean = round(mean, 2),
+                    Variance = round(var, 4))
+  
+  print(summary)
+  
+})
+
+```
+
+
+
+
+
+Column
+-------------------------------------
+
+
+### 
+<!--
+The plot below displays the density of the prior distribution with the hyperparameters that you chose.
+-->
+
+```{r prior}
+
+renderPlot({
+  
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  
+  
+  
+  
+  # calculate mean and variance
+  mean.prior <- alpha / (alpha + beta)
+  var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  
+  
+  
+  ggplot(tibble(x = c(0, 1)), aes(x)) +
+    stat_function(fun = dbeta, 
+                  args = list(shape1 = alpha, shape2 = beta),
+                  color = "#482173FF",
+                  size = 2,
+                  n = 1000) + #adds prior density plot
+    geom_segment(aes(x = mean.prior, y = 0, xend = mean.prior, yend = dbeta(mean.prior, alpha, beta)),
+                 size = 1, color = "#482173FF", linetype = "dashed") + # prior mean
+    labs(x = "p",
+         y = "Density",
+         subtitle = "Density of the prior distribution and the prior mean in a dotted line") +
+    xlim(c(0, 1)) +
+    ylim(c(NA, 10)) +
+    theme(text = element_text(size = 16),
+          plot.subtitle = element_text(size = 14))
+  
+  
+  
+})
+
+```
+
+
+
+
+
+
+
+
+**Data and likelihood**
+=====================================
+
+
+Column {.sidebar data-width=350}
+-------------------------------------
+
+
+
+**Select dataset:**
+
+```{r dataset}
+
+selectInput("binom.data", label = "Select the data you want to analyze:",
+            choices = c("Delta IV Heavy launches" = "delta",
+                        "Dog cancer test detection" = "dog",
+                        "Custom data" = "custom",
+                        "Generate sample" = "generate"),
+            selected = "delta")
+
+```
+
+Enter the value of $\hat{p}$ from your data
+
+Enter the "true" value of $p$
+
+```{r custom.phat}
+
+numericInput("phat", label = withMathJax('\\( \\hat{p} \\text{ or } p \\):'),
+            value = 0.5, min = 0, max = 1,
+            step = 0.05)
+
+```
+
+
+Enter the value of the sample size $n$.
+
+
+
+```{r custom.n}
+
+numericInput("n", label = withMathJax('\\( n \\):'),
+            value = 10, min = 0, max = 200,
+            step = 1)
+
+```
+
+
+<hr>
+
+
+
+The observed $\hat{p}$ is
+
+```{r data.mean}
+  
+renderPrint({
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  
+  # select data set
+  if(dat.name == "dog"){
+    binom.dat <- dog
+    n <- nrow(binom.dat)
+    y.lim <- 8
+  } 
+  
+  if(dat.name == "delta"){
+    binom.dat <- delta
+    n <- nrow(binom.dat)
+    y.lim <- 12
+  } 
+  
+  if(dat.name == "custom"){
+    binom.dat <- tibble(x = c(rep(1, round(n*phat, 0)), 
+                              rep(0, n - round(n*phat, 0))))
+    y.lim <- 10
+  }
+  
+  if(dat.name == "generate"){
+    binom.dat <- tibble(x = sample(c(0, 1), size = n, replace = TRUE, prob = c(1-phat, phat)))
+    y.lim <- 10
+  }
+  
+  print(mean(binom.dat$x))
+  
+  saveRDS(binom.dat, file = "/tmp/shiny-server/binom_dat.RDS")
+})  
+
+```
+
+
+
+
+Column
+-------------------------------------
+
+
+### 
+
+
+
+```{r data.info}
+
+renderPlot({
+
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  
+  colors <- c("Prior" = "#482173FF", 
+              "Likelihood" = "#C2DF23FF", 
+              "Posterior" = "#1E9B8AFF")
+  
+  
+  # data
+  data_plot <- binom.dat %>% 
+    dplyr::mutate(x = factor(x, levels = c("1", "0"))) %>% 
+    dplyr::group_by(x) %>% 
+    dplyr::summarise(n = n()) %>% 
+    dplyr::mutate(dat = "dat",
+                  perc = n / nrow(binom.dat),
+                  cumperc = cumsum(perc),
+                  cum_n = cumsum(n),
+                  cum_n = cum_n - n/2,
+                  perc_label = paste0("x = ", x, ":\n", n, "\n", "(", round(100*perc, 1), "%)")) %>% 
+    ggplot(aes(dat, n, fill = x)) +
+    geom_bar(stat = "identity",
+             position = "stack",
+             fill="white",
+             color = "black") +
+    geom_text(aes(y = cum_n, label = perc_label),
+              size = 6) +
+    labs(x = "",
+         y = "sample size n",
+         subtitle = "Number and percentage of observed 0's and 1's") +
+    theme(text = element_text(size = 16),
+          plot.subtitle = element_text(size = 14),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line.y = element_blank()) +
+    coord_flip()
+    
+  
+  
+  
+  
+  # likelihood
+  likelihood_plot <- ggplot(tibble(x = binom.dat %>% 
+                               mutate(x = ifelse(x == 1, 0.97, 0.03)) %>% 
+                               pull(), y = rep(0, n))) +
+    stat_function(fun = dbeta, 
+                  args = list(shape1 = sum(binom.dat$x) + 1, shape2 = n - sum(binom.dat$x) + 1),
+                  aes(color = "Likelihood"),
+                  size = 2,
+                  n = 1000) + #adds likelihood density plot
+    geom_segment(aes(x = sum(binom.dat$x) / n, y = 0, xend = sum(binom.dat$x) / n, yend = dbeta(sum(binom.dat$x) / n, sum(binom.dat$x) + 1, n - sum(binom.dat$x) + 1)),
+                 color = "#C2DF23FF", size = 1, linetype = "dashed") + # data mean
+    scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
+    labs(x = "p",
+         y = "",
+         color = "",
+         subtitle = expression(paste("Data likelihood in green and observed value of ", hat(p), " in a green dotted line"))) +
+    xlim(c(0, 1)) +
+    #ylim(c(NA, y.lim)) +
+    theme(text = element_text(size = 16),
+          plot.subtitle = element_text(size = 14))
+  
+    
+   data_plot / likelihood_plot + 
+  plot_layout(heights = c(1, 3))
+    
+  
+
+})
+```
+
+
+<script>
+
+function detect_change() {
+    const paragraphs = document.getElementsByTagName('p');
+    
+    let index;
+    for (var i=0; i<paragraphs.length; i++){
+        if (paragraphs[i].innerHTML.includes('Enter the value of <span')){
+            index = i;
+            break;
+        }
+    }
+    
+    const n = document.querySelector("#n");
+    
+    const p_box = document.querySelector("#phat");
+    p_label = document.querySelector("[for='phat']")
+    switch (this.value) {
+        case 'dog':
+            n.value = 36;
+            n.setAttribute("disabled", "disabled");
+            p_box.style.display = 'None';
+            p_label.style.display = 'None';
+            paragraphs[index].style.display = 'None';
+            paragraphs[index+1].style.display = 'None';
+            paragraphs[index+2].style.display = 'None';
+            break;
+        case 'delta':
+            n.value = 13;
+            n.setAttribute("disabled", "disabled");
+            p_box.style.display = 'None';
+            p_label.style.display = 'None';
+            paragraphs[index].style.display = 'None';
+            paragraphs[index+1].style.display = 'None';
+            paragraphs[index+2].style.display = 'None';
+            break;
+        case 'custom':
+            n.removeAttribute("disabled");
+            paragraphs[index].style.display = 'block';
+            paragraphs[index+1].style.display = 'None';
+            paragraphs[index+2].style.display = 'block';
+            document.querySelector("#MathJax-Span-66").style.display = 'inline';
+            document.querySelector("#MathJax-Span-67").style.display = 'None';
+            document.querySelector("#MathJax-Span-68").style.display = 'None';
+            p_box.style.display = 'block';
+            p_label.style.display = 'block';
+            p_box.value = 0.5;
+            n.value = 10;
+            break;
+        case 'generate':
+            n.removeAttribute("disabled");
+            paragraphs[index].style.display = 'None';
+            paragraphs[index+1].style.display = 'block';
+            paragraphs[index+2].style.display = 'block';
+            document.querySelector("#MathJax-Span-66").style.display = 'None';
+            document.querySelector("#MathJax-Span-67").style.display = 'None';
+            document.querySelector("#MathJax-Span-68").style.display = 'block';
+            p_box.style.display = 'block';
+            p_label.style.display = 'block';
+            p_box.value = 0.5;
+            n.value = 10;
+    }
+ }
+ 
+
+$(document).ready(function() {
+  //Add an event listener
+  $(document).on("change", "select", detect_change)
+  
+  // trigger the event
+  document.querySelector('select').dispatchEvent(new Event('change', { 'bubbles': true }))
+});
+</script>
+
+
+**Posterior analysis**
+=====================================
+
+
+Column {.sidebar data-width=350}
+-------------------------------------
+
+**Posterior summary**
+
+The table below contains the mean, quantiles, and variance of the posterior distribution.
+
+```{r post.quantiles}
+
+
+
+
+renderTable({
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  
+  # posterior values
+  alpha.post <- alpha + sum(binom.dat$x)
+  beta.post <- beta + n - sum(binom.dat$x)
+  mean.post <- alpha.post / (alpha.post + beta.post)
+  mode.post <- (alpha.post-1)/(alpha.post+beta.post-2)
+  var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
+  q1.post <- qbeta(p = 0.25, shape1 = alpha.post, shape2 = beta.post)
+  median.post <- qbeta(p = 0.5, shape1 = alpha.post, shape2 = beta.post)
+  q3.post <- qbeta(p = 0.75, shape1 = alpha.post, shape2 = beta.post)
+  
+  # summary table
+  if(mean.post < median.post){
+    summary <- tibble(" " = c("Q1", "Mean", "Median", "Mode", "Q3", "Variance"),
+                      Value = c(round(q1.post, 2), round(mean.post, 2), round(median.post, 2), round(mode.post, 2), round(q3.post, 2), as.character(round(var.post, 4))))
+  }else{
+    summary <- tibble(" " = c("Q1", "Median", "Mean", "Mode", "Q3", "Variance"),
+                      Value = c(round(q1.post, 2), round(median.post, 2), round(mean.post, 2), round(mode.post, 2), round(q3.post, 2), as.character(round(var.post, 4))))
+  }
+  
+  print(summary)
+  
+})  
+```
+
+
+<hr>
+
+**Credible intervals**
+
+In the type-in box below, enter the level $\alpha$ of the credible interval:
+
+```{r custom.alpha}
+
+numericInput("significance", label = withMathJax('\\( \\alpha \\):'),
+            value = 0.05, min = 0, max = 1,
+            step = 0.01)
+
+```
+
+
+
+A $(1-\alpha) \times 100$% credible interval for $p$ is given by:
+
+
+
+```{r post.ci}
+
+
+
+
+renderTable({
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  significance <- input$significance
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  
+  # posterior values
+  alpha.post <- alpha + sum(binom.dat$x)
+  beta.post <- beta + n - sum(binom.dat$x)
+  
+  # create tabe with CI
+  ci <- betaHPD(alpha.post, beta.post, 1-significance)
+  summary <- tibble(Lower = ci[1], Upper = ci[2])
+  
+  print(summary, digits = 4)
+  
+})  
+```
+
+
+
+
+Column
+-------------------------------------
+
+### 
+
+
+
+```{r post.plot}
+
+renderPlot({
+  
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  significance <- input$significance
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  
+  colors <- c("Prior" = "#482173FF", 
+              "Likelihood" = "#C2DF23FF", 
+              "Posterior" = "#1E9B8AFF")
+  
+  # posterior values
+  alpha.post <- alpha + sum(binom.dat$x)
+  beta.post <- beta + n - sum(binom.dat$x)
+  
+  # calculate posterior stats
+  mean.post <- alpha.post / (alpha.post + beta.post)
+  ci <- betaHPD(alpha.post, beta.post, 1-significance)
+  
+  ggplot(tibble(x = c(0, 1)), aes(x)) +
+    stat_function(fun = dbeta, 
+                  args = list(shape1 = alpha.post, shape2 = beta.post),
+                  aes(color = "Posterior"),
+                  size = 2,
+                  n = 1000) + #adds posterior density plot
+    geom_segment(aes(x = mean.post, y = 0, xend = mean.post, yend = dbeta(mean.post, alpha.post, beta.post)),
+                 size = 1, color = "#1E9B8AFF", linetype = "dashed") + # posterior mean
+    geom_segment(aes(x = ci[1], y = 0, xend = ci[1], yend = dbeta(ci[1], alpha.post, beta.post)),
+                 linetype = "dotted", size = 1, color = "#1E9B8AFF") + # lower ci bound
+    geom_segment(aes(x = ci[2], y = 0, xend = ci[2], yend = dbeta(ci[2], alpha.post, beta.post)),
+                 linetype = "dotted", size = 1, color = "#1E9B8AFF") + # upper ci bound
+    scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
+    labs(x = "p",
+         y = "Density",
+         color = " ",
+         subtitle = expression(paste("Density of the posterior distribution of p, posterior mean in a dashed line, ",  (1-alpha), " x100% credible interval in dashed lines."))) +
+    xlim(c(0, 1)) +
+    theme(text = element_text(size = 16),
+          plot.subtitle = element_text(size = 14))
+  
+  
+  
+})
+```
+
+
+
+
+
+
+
+
+**Summary**
+=====================================
+
+
+Column {.sidebar data-width=350}
+-------------------------------------
+
+
+The table below contains summary statistics for the prior, data, and posterior.
+
+```{r summary.table}
+
+renderTable({
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  # prior values
+  mean.prior <- alpha / (alpha + beta)
+  var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  
+  # data values
+  mean.data <- mean(binom.dat$x)
+  var.data <- var(binom.dat$x)
+  
+  # posterior values
+  alpha.post <- alpha + sum(binom.dat$x)
+  beta.post <- beta + n - sum(binom.dat$x)
+  mean.post <- alpha.post / (alpha.post + beta.post)
+  var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
+  
+  # summary table
+  summary <- tibble(" " = c("Prior", "Data", "Posterior"),
+                    Mean = c(round(mean.prior, 2), round(mean.data, 2), round(mean.post, 2)),
+                    Variance = c(round(var.prior, 4), "-", round(var.post, 4)))
+  
+  print(summary, digits = 2)
+  
+})  
+```
+
+
+
+
+<hr>
+
+**Hyperparameter updates**
+
+The table below contains the original and updated hyperparameters. The posterior distribution of $p$ is $\mathrm{Beta}(a', b')$, where $a'$ and $b'$ are the values in the second row.
+
+
+
+```{r post.hyperparam.update}
+
+renderTable({
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  significance <- input$significance
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  
+  # posterior values
+  alpha.post <- alpha + sum(binom.dat$x)
+  beta.post <- beta + n - sum(binom.dat$x)
+  
+  # create tabe with CI
+  summary <- tibble(" " = c("Original", "Updated"),
+                    a = c(alpha, alpha.post),
+                    b = c(beta, beta.post))
+  
+  print(summary, digits = 4)
+  
+})  
+```
+
+
+
+
+
+
+
+
+Column
+-------------------------------------
+
+### 
+
+
+
+```{r summary.triplot}
+
+renderPlot({
+  
+  # read inputs
+  alpha <- input$alpha
+  beta <- input$beta
+  dat.name <- input$binom.data
+  phat <- input$phat
+  n <- input$n
+  
+  binom.dat <- readRDS("/tmp/shiny-server/binom_dat.RDS")
+  n <- nrow(binom.dat)
+  y.lim <- 12
+  
+  
+  colors <- c("Prior" = "#482173FF", 
+              "Likelihood" = "#C2DF23FF", 
+              "Posterior" = "#1E9B8AFF")
+  
+  
+  # prior values
+  mean.prior <- alpha / (alpha + beta)
+  var.prior <- alpha * beta / ((alpha + beta)^2 * (alpha + beta + 1))
+  
+  # data values
+  mean.data <- mean(binom.dat$x)
+  var.data <- var(binom.dat$x)
+  
+  # posterior values
+  alpha.post <- alpha + sum(binom.dat$x)
+  beta.post <- beta + n - sum(binom.dat$x)
+  mean.post <- alpha.post / (alpha.post + beta.post)
+  var.post <- alpha.post * beta.post / ((alpha.post + beta.post)^2 * (alpha.post + beta.post + 1))
+  
+  
+  
+  ggplot(tibble(x = c(0, 1)), aes(x)) +
+    stat_function(fun = dbeta, 
+                  args = list(shape1 = alpha, shape2 = beta),
+                  aes(color = "Prior"),
+                  size = 2,
+                  n = 1000) + #adds prior density plot
+    geom_segment(aes(x = mean.prior, y = 0, xend = mean.prior, yend = dbeta(mean.prior, alpha, beta)),
+                 size = 1, color = "#482173FF", linetype = "dashed") + # prior mean
+    stat_function(fun = dbeta, 
+                  args = list(shape1 = sum(binom.dat$x) + 1, shape2 = n - sum(binom.dat$x) + 1),
+                  aes(color = "Likelihood"),
+                  size = 2,
+                  n = 1000) + #adds likelihood density plot
+    geom_segment(aes(x = sum(binom.dat$x) / n, y = 0, xend = sum(binom.dat$x) / n, yend = dbeta(sum(binom.dat$x) / n, sum(binom.dat$x) + 1, n - sum(binom.dat$x) + 1)), 
+                 color = "#C2DF23FF", size = 1, linetype = "dashed") + # data mean
+    stat_function(fun = dbeta, 
+                  args = list(shape1 = alpha + sum(binom.dat$x), shape2 = beta + n - sum(binom.dat$x)),
+                  aes(color = "Posterior"),
+                  size = 2,
+                  n = 1000) + #adds posterior density plot
+    geom_segment(aes(x = mean.post, y = 0, xend = mean.post, yend = dbeta(mean.post, alpha.post, beta.post)),
+                 size = 1, color = "#1E9B8AFF", linetype = "dashed") + # posterior mean
+    scale_color_manual(values = colors, breaks = c("Prior", "Likelihood", "Posterior")) +
+    labs(x = "p",
+         y = "Density",
+         color = "Density:",
+         subtitle = "Triplot: prior, likelihood, and posterior on the same display") +
+    xlim(c(0, 1)) +
+    theme(text = element_text(size = 16),
+          plot.subtitle = element_text(size = 14))
+  
+  
+  
+})
+```
