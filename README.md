@@ -21,7 +21,7 @@ Visit [StatSpace](https://statspace.elearning.ubc.ca/) to see them!
 If you find our resources useful, consider citing 
 [our paper](https://iase-web.org/icots/11/proceedings/pdfs/ICOTS11_309_DILUVI.pdf?1669865554).
 
-**BibTeX code for citing MAD Mix**
+**BibTeX code for citing First Bayes**
 
 ```
 @inproceedings{diluvi2022icots,     
